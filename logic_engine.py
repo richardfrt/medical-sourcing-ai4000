@@ -15,16 +15,15 @@ except ImportError:
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
 import chromadb
 from chromadb.config import Settings
-from chromadb.errors import InvalidCollectionException
 from openai import OpenAI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION_NAME = "medisource_devices"
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o"
@@ -35,6 +34,29 @@ SYSTEM_PROMPT = (
     "sustitucion es segura basandote en los materiales y el codigo GMDN. "
     "Confirma el % de ahorro."
 )
+
+
+def _resolve_chroma_dir() -> str:
+    env_dir = os.environ.get("CHROMA_DIR")
+    if env_dir:
+        os.makedirs(env_dir, exist_ok=True)
+        return env_dir
+
+    preferred_dir = os.path.join(BASE_DIR, "chroma_db")
+    try:
+        os.makedirs(preferred_dir, exist_ok=True)
+        probe_path = os.path.join(preferred_dir, ".write_probe")
+        with open(probe_path, "w", encoding="utf-8") as probe_file:
+            probe_file.write("ok")
+        os.remove(probe_path)
+        return preferred_dir
+    except Exception:
+        fallback_dir = os.path.join(tempfile.gettempdir(), "medisource_chroma_db")
+        os.makedirs(fallback_dir, exist_ok=True)
+        return fallback_dir
+
+
+CHROMA_DIR = _resolve_chroma_dir()
 
 
 @dataclass
@@ -92,21 +114,22 @@ def _get_collection():
     )
     try:
         return chroma_client.get_collection(COLLECTION_NAME)
-    except InvalidCollectionException:
-        _bootstrap_collection_if_missing()
+    except Exception as first_exc:  # noqa: BLE001
+        try:
+            _bootstrap_collection_if_missing()
+        except Exception as bootstrap_exc:  # noqa: BLE001
+            raise RuntimeError(
+                "No se pudo inicializar automaticamente la base vectorial de ChromaDB. "
+                f"Detalle: {bootstrap_exc}"
+            ) from bootstrap_exc
+
         try:
             return chroma_client.get_collection(COLLECTION_NAME)
-        except InvalidCollectionException as inner_exc:
+        except Exception as second_exc:  # noqa: BLE001
             raise RuntimeError(
-                "No se pudo inicializar la coleccion vectorial 'medisource_devices'. "
-                "Verifica OPENAI_API_KEY y vuelve a intentar."
-            ) from inner_exc
-        except Exception as inner_exc:  # noqa: BLE001
-            raise RuntimeError(
-                "Fallo al cargar la coleccion vectorial despues del bootstrap automatico."
-            ) from inner_exc
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("No se pudo abrir la base vectorial de ChromaDB.") from exc
+                "No se pudo abrir la base vectorial de ChromaDB tras el bootstrap. "
+                f"Detalle inicial: {first_exc}. Detalle final: {second_exc}"
+            ) from second_exc
 
 
 def _bootstrap_collection_if_missing() -> None:
@@ -123,7 +146,7 @@ def _bootstrap_collection_if_missing() -> None:
         df = build_mock_dataset()
         df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8")
 
-    build_index(reset=False)
+    build_index(reset=True)
 
 
 def embed_query(client: OpenAI, text: str) -> list[float]:

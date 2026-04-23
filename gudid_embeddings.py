@@ -15,6 +15,7 @@ except ImportError:
 
 import hashlib
 import os
+import tempfile
 import time
 from typing import Iterable
 
@@ -26,10 +27,32 @@ from chromadb.config import Settings
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "gudid_filtrado.csv")
-CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION_NAME = "medisource_devices"
 EMBEDDING_MODEL = "text-embedding-3-small"
 BATCH_SIZE = 32
+
+
+def _resolve_chroma_dir() -> str:
+    env_dir = os.environ.get("CHROMA_DIR")
+    if env_dir:
+        os.makedirs(env_dir, exist_ok=True)
+        return env_dir
+
+    preferred_dir = os.path.join(BASE_DIR, "chroma_db")
+    try:
+        os.makedirs(preferred_dir, exist_ok=True)
+        probe_path = os.path.join(preferred_dir, ".write_probe")
+        with open(probe_path, "w", encoding="utf-8") as probe_file:
+            probe_file.write("ok")
+        os.remove(probe_path)
+        return preferred_dir
+    except Exception:
+        fallback_dir = os.path.join(tempfile.gettempdir(), "medisource_chroma_db")
+        os.makedirs(fallback_dir, exist_ok=True)
+        return fallback_dir
+
+
+CHROMA_DIR = _resolve_chroma_dir()
 
 
 def _progress_bar(done: int, total: int, width: int = 32) -> str:

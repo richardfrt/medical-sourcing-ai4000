@@ -18,10 +18,7 @@ import traceback
 
 import streamlit as st
 
-from logic_engine import AuditReport, DeviceHit, audit_search
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
+from logic_engine import CHROMA_DIR, AuditReport, DeviceHit, audit_search
 
 st.set_page_config(
     page_title="MediSource AI | Inteligencia Clinica de Compras",
