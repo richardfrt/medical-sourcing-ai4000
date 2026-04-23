@@ -26,8 +26,8 @@ import chromadb
 from chromadb.config import Settings
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "gudid_filtrado.csv")
-COLLECTION_NAME = "medisource_devices"
+CSV_PATH = os.path.join(BASE_DIR, "gudid_real.csv")
+COLLECTION_NAME = "fda_real_data"
 EMBEDDING_MODEL = "text-embedding-3-small"
 BATCH_SIZE = 32
 
@@ -98,7 +98,7 @@ def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:
 def build_index(reset: bool = True) -> None:
     if not os.path.exists(CSV_PATH):
         raise FileNotFoundError(
-            f"No se encontro {CSV_PATH}. Ejecuta primero: python generar_prueba.py"
+            f"No se encontro {CSV_PATH}. Ejecuta primero: python descargar_fda_real.py"
         )
 
     if not os.environ.get("OPENAI_API_KEY"):

@@ -24,7 +24,7 @@ from chromadb.config import Settings
 from openai import OpenAI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-COLLECTION_NAME = "medisource_devices"
+COLLECTION_NAME = "fda_real_data"
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o"
 
@@ -143,17 +143,17 @@ def _get_collection():
 
 
 def _bootstrap_collection_if_missing() -> None:
-    """Create demo CSV + Chroma collection when first run has no index."""
+    """Create real FDA CSV + Chroma collection when index is missing."""
     if not os.environ.get("OPENAI_API_KEY"):
         raise RuntimeError(
             "Falta OPENAI_API_KEY. Configuralo en Secrets para crear el indice vectorial."
         )
 
-    from generar_prueba import OUTPUT_PATH, build_mock_dataset
+    from descargar_fda_real import OUTPUT_PATH, download_real_gudid
     from gudid_embeddings import build_index
 
     if not os.path.exists(OUTPUT_PATH):
-        df = build_mock_dataset()
+        df = download_real_gudid(target_records=300, search_term="catheter", page_size=100)
         df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8")
 
     build_index(reset=True)
