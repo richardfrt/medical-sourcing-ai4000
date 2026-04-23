@@ -113,7 +113,7 @@ def _get_collection():
         settings=Settings(anonymized_telemetry=False),
     )
     try:
-        return chroma_client.get_collection(COLLECTION_NAME)
+        collection = chroma_client.get_collection(COLLECTION_NAME)
     except Exception as first_exc:  # noqa: BLE001
         try:
             _bootstrap_collection_if_missing()
@@ -124,12 +124,22 @@ def _get_collection():
             ) from bootstrap_exc
 
         try:
-            return chroma_client.get_collection(COLLECTION_NAME)
+            collection = chroma_client.get_collection(COLLECTION_NAME)
         except Exception as second_exc:  # noqa: BLE001
             raise RuntimeError(
                 "No se pudo abrir la base vectorial de ChromaDB tras el bootstrap. "
                 f"Detalle inicial: {first_exc}. Detalle final: {second_exc}"
             ) from second_exc
+
+    try:
+        if collection.count() == 0:
+            _bootstrap_collection_if_missing()
+            return chroma_client.get_collection(COLLECTION_NAME)
+        return collection
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "La coleccion vectorial existe pero no se pudo validar/reconstruir."
+        ) from exc
 
 
 def _bootstrap_collection_if_missing() -> None:
@@ -154,27 +164,40 @@ def embed_query(client: OpenAI, text: str) -> list[float]:
     return resp.data[0].embedding
 
 
+def _fallback_top_hits(collection, top_k: int) -> list[DeviceHit]:
+    """Return a deterministic top_k fallback when semantic query is empty."""
+    raw = collection.get(limit=top_k, include=["metadatas"])
+    metadatas = raw.get("metadatas", []) or []
+    return [DeviceHit.from_metadata(meta, distance=1.0) for meta in metadatas]
+
+
 def semantic_search(query: str, top_k: int = 3) -> list[DeviceHit]:
     """Return top_k devices ranked by cosine similarity to the query."""
 
     client = _get_openai_client()
     collection = _get_collection()
 
+    effective_top_k = max(3, top_k)
     embedding = embed_query(client, query)
 
     results = collection.query(
         query_embeddings=[embedding],
-        n_results=top_k,
+        n_results=effective_top_k,
         include=["metadatas", "distances", "documents"],
     )
 
     metadatas = results.get("metadatas", [[]])[0] or []
     distances = results.get("distances", [[]])[0] or []
 
+    if not metadatas:
+        return _fallback_top_hits(collection, effective_top_k)
+
     hits: list[DeviceHit] = []
     for meta, distance in zip(metadatas, distances):
         hits.append(DeviceHit.from_metadata(meta, distance))
-    return hits
+    if hits:
+        return hits[:effective_top_k]
+    return _fallback_top_hits(collection, effective_top_k)
 
 
 def _pick_anchor_and_alternatives(
