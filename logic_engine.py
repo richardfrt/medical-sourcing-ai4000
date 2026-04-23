@@ -20,6 +20,7 @@ from typing import Any
 
 import chromadb
 from chromadb.config import Settings
+from chromadb.errors import InvalidCollectionException
 from openai import OpenAI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -89,7 +90,40 @@ def _get_collection():
         path=CHROMA_DIR,
         settings=Settings(anonymized_telemetry=False),
     )
-    return chroma_client.get_collection(COLLECTION_NAME)
+    try:
+        return chroma_client.get_collection(COLLECTION_NAME)
+    except InvalidCollectionException:
+        _bootstrap_collection_if_missing()
+        try:
+            return chroma_client.get_collection(COLLECTION_NAME)
+        except InvalidCollectionException as inner_exc:
+            raise RuntimeError(
+                "No se pudo inicializar la coleccion vectorial 'medisource_devices'. "
+                "Verifica OPENAI_API_KEY y vuelve a intentar."
+            ) from inner_exc
+        except Exception as inner_exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Fallo al cargar la coleccion vectorial despues del bootstrap automatico."
+            ) from inner_exc
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("No se pudo abrir la base vectorial de ChromaDB.") from exc
+
+
+def _bootstrap_collection_if_missing() -> None:
+    """Create demo CSV + Chroma collection when first run has no index."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "Falta OPENAI_API_KEY. Configuralo en Secrets para crear el indice vectorial."
+        )
+
+    from generar_prueba import OUTPUT_PATH, build_mock_dataset
+    from gudid_embeddings import build_index
+
+    if not os.path.exists(OUTPUT_PATH):
+        df = build_mock_dataset()
+        df.to_csv(OUTPUT_PATH, index=False, encoding="utf-8")
+
+    build_index(reset=False)
 
 
 def embed_query(client: OpenAI, text: str) -> list[float]:

@@ -99,7 +99,10 @@ def _sidebar() -> dict:
         if not os.environ.get("OPENAI_API_KEY"):
             st.error("⚠️ Falta OPENAI_API_KEY en el entorno.")
         if not os.path.isdir(CHROMA_DIR):
-            st.warning("📦 Indice vectorial no encontrado. Ejecuta `python gudid_embeddings.py`.")
+            st.info(
+                "📦 Indice vectorial no encontrado. "
+                "Se inicializara automaticamente en la primera auditoria."
+            )
     return {"top_k": top_k, "example": chosen_example}
 
 
